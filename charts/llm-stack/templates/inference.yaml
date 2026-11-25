@@ -1,0 +1,73 @@
+{{- if .Values.inference.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "llm-stack.fullname" . }}-inference
+  labels:
+    {{- include "llm-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: inference
+spec:
+  replicas: {{ .Values.inference.replicas }}
+  strategy:
+    type: Recreate  # one model server per GPU node; don't run two during rollout
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: inference
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: inference
+    spec:
+      serviceAccountName: {{ include "llm-stack.fullname" . }}
+      automountServiceAccountToken: false
+      {{- include "llm-stack.podSecurity" . | nindent 6 }}
+      containers:
+        - name: inference
+          image: {{ include "llm-stack.image" (dict "img" .Values.inference.image "global" .Values.global) }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: OLLAMA_MODELS
+              value: /models
+            - name: HOME
+              value: /tmp
+          ports:
+            - containerPort: {{ .Values.inference.port }}
+          readinessProbe:
+            tcpSocket: {port: {{ .Values.inference.port }}}
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: {{ .Values.inference.port }}}
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.inference.resources | nindent 12 }}
+          {{- include "llm-stack.containerSecurity" . | nindent 10 }}
+          volumeMounts:
+            - name: models
+              mountPath: /models
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ .Values.inference.modelsPVC }}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "llm-stack.fullname" . }}-inference
+  labels:
+    {{- include "llm-stack.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: inference
+  ports:
+    - port: {{ .Values.inference.port }}
+      targetPort: {{ .Values.inference.port }}
+{{- end }}

@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: demo-api-blue}
+spec:
+  replicas: 2
+  template:
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001}
+      containers:
+        - name: api
+          image: registry.plant.internal:5000/rakeshsaineni/insurance-rag-agent@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "1", memory: 1Gi}}
+          readinessProbe: {httpGet: {path: /health, port: 8000}}
+          livenessProbe: {httpGet: {path: /health, port: 8000}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: demo-api-blue}
+spec: {minAvailable: 1}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: demo-default-deny}
+spec: {podSelector: {}, policyTypes: [Ingress, Egress]}

@@ -1,0 +1,118 @@
+{{- range $color := .Values.api.colors }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "llm-stack.fullname" $ }}-api-{{ $color }}
+  labels:
+    {{- include "llm-stack.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: api
+    color: {{ $color }}
+spec:
+  replicas: {{ $.Values.api.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: api
+      color: {{ $color }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+        app.kubernetes.io/component: api
+        color: {{ $color }}
+    spec:
+      serviceAccountName: {{ include "llm-stack.fullname" $ }}
+      automountServiceAccountToken: false
+      {{- include "llm-stack.podSecurity" $ | nindent 6 }}
+      {{- with $.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: api
+          image: {{ include "llm-stack.image" (dict "img" $.Values.api.image "global" $.Values.global) }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: {{ $.Values.api.port }}
+          env:
+            {{- range $k, $v := $.Values.api.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            - name: INFERENCE_URL
+              value: http://{{ include "llm-stack.fullname" $ }}-inference:{{ $.Values.inference.port }}
+          {{- if $.Values.existingSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ $.Values.existingSecret }}
+          {{- end }}
+          readinessProbe:
+            httpGet: {path: /health, port: {{ $.Values.api.port }}}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: {{ $.Values.api.port }}}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            {{- toYaml $.Values.api.resources | nindent 12 }}
+          {{- include "llm-stack.containerSecurity" $ | nindent 10 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- if $.Values.api.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "llm-stack.fullname" $ }}-api-{{ $color }}
+  labels:
+    {{- include "llm-stack.labels" $ | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "llm-stack.fullname" $ }}-api-{{ $color }}
+  minReplicas: {{ $.Values.api.autoscaling.minReplicas }}
+  maxReplicas: {{ $.Values.api.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $.Values.api.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "llm-stack.fullname" $ }}-api-{{ $color }}
+  labels:
+    {{- include "llm-stack.labels" $ | nindent 4 }}
+spec:
+  minAvailable: {{ $.Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: api
+      color: {{ $color }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "llm-stack.fullname" . }}-api
+  labels:
+    {{- include "llm-stack.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: api
+    color: {{ .Values.api.activeColor }}  # flip this value to cut traffic over (blue-green)
+  ports:
+    - port: 80
+      targetPort: {{ .Values.api.port }}

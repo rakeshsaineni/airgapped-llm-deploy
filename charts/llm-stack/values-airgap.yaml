@@ -1,0 +1,9 @@
+# Overrides for a disconnected cluster. `airgap retag` prints the digests to fill in.
+global:
+  imageRegistry: registry.plant.internal:5000
+api:
+  image:
+    digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+inference:
+  image:
+    digest: "sha256:1111111111111111111111111111111111111111111111111111111111111111"

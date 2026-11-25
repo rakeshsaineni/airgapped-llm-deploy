@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: quick-demo}
+spec:
+  replicas: 3
+  template:
+    spec:
+      hostNetwork: true
+      volumes: [{name: docker-sock, hostPath: {path: /var/run/docker.sock}}]
+      containers:
+        - name: app
+          image: someorg/llm-app:latest
+          imagePullPolicy: Always
+          securityContext: {privileged: true}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: api-keys}
+stringData: {OPENAI_API_KEY: sk-live-should-not-be-here}

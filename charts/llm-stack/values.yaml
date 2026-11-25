@@ -1,0 +1,46 @@
+global:
+  # Air-gapped installs point this at the internal registry, e.g. registry.plant.internal:5000
+  imageRegistry: ""
+  imagePullSecrets: []
+
+api:
+  image:
+    repository: ghcr.io/rakeshsaineni/insurance-rag-agent
+    tag: "0.1.0"
+    digest: ""            # pin by digest in production: sha256:...
+  # Blue-green: both colors can run; the Service sends traffic to activeColor only
+  colors: [blue]
+  activeColor: blue
+  replicas: 2
+  port: 8000
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "1", memory: 1Gi}
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  env:
+    POLICYRAG_DATA: /app/data
+
+inference:
+  enabled: true
+  image:
+    repository: docker.io/ollama/ollama
+    tag: "0.5.7"
+    digest: ""
+  port: 11434
+  replicas: 1
+  resources:
+    requests: {cpu: "2", memory: 8Gi}
+    limits: {cpu: "4", memory: 16Gi}
+  # Model weights come from a pre-loaded volume, never from the internet
+  modelsPVC: llm-models
+
+existingSecret: ""   # name of a Secret with API keys etc.; this chart never templates secret values
+networkPolicy:
+  enabled: true
+  ingressNamespace: ingress-nginx
+podDisruptionBudget:
+  minAvailable: 1

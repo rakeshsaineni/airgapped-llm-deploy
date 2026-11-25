@@ -1,0 +1,42 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests
+      - run: pytest
+
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: helm lint (default and air-gapped values)
+        run: |
+          helm lint charts/llm-stack
+          helm lint charts/llm-stack -f charts/llm-stack/values-airgap.yaml
+      - name: Render and enforce policy (standard profile)
+        run: helm template demo charts/llm-stack > rendered.yaml && airgap lint rendered.yaml
+      - name: Render and enforce policy (air-gapped profile, internal registry, digests)
+        run: |
+          helm template demo charts/llm-stack -f charts/llm-stack/values-airgap.yaml > rendered-airgap.yaml
+          airgap lint rendered-airgap.yaml --profile airgap --registry registry.plant.internal:5000
+          airgap images rendered-airgap.yaml
+      - name: Schema validation (kubeconform)
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          ./kubeconform -strict -summary rendered.yaml rendered-airgap.yaml
